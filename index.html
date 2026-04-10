@@ -1,1 +1,1403 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AR · Atas de Reunião · Aceitar</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://unpkg.com/docx@8.5.0/build/index.umd.js"></script>
+<style>
+/*
+═══════════════════════════════════════════════════════════════
+  SQL — executar no Supabase SQL Editor antes de usar a app
+═══════════════════════════════════════════════════════════════
 
+create table ar_templates (
+  id uuid primary key default gen_random_uuid(),
+  tipo text not null,
+  versao text not null default '1.0',
+  secoes jsonb not null default '[]',
+  ativo boolean default true,
+  criado_em timestamptz default now()
+);
+
+create table ar_obras_templates (
+  id uuid primary key default gen_random_uuid(),
+  obra_nome text not null,
+  tipo text not null,
+  template_id uuid references ar_templates(id),
+  criado_em timestamptz default now(),
+  unique(obra_nome, tipo)
+);
+
+create table ar_reunioes (
+  id uuid primary key default gen_random_uuid(),
+  obra_nome text not null,
+  tipo text not null default 'AR Obra',
+  numero text,
+  semana int,
+  data date,
+  inicio time,
+  fim time,
+  meteorologia text,
+  template_id uuid references ar_templates(id),
+  template_versao text,
+  criado_em timestamptz default now()
+);
+
+create table ar_temas (
+  id uuid primary key default gen_random_uuid(),
+  obra_nome text not null,
+  secao_num text not null,
+  secao_titulo text,
+  titulo text not null,
+  codigo_ref text,
+  aberto_em uuid references ar_reunioes(id),
+  fechado_em uuid references ar_reunioes(id),
+  ordem int default 0,
+  criado_em timestamptz default now()
+);
+
+create table ar_entradas (
+  id uuid primary key default gen_random_uuid(),
+  tema_id uuid references ar_temas(id) on delete cascade,
+  reuniao_id uuid references ar_reunioes(id) on delete cascade,
+  data_label text,
+  conteudo text,
+  criado_em timestamptz default now()
+);
+
+create table ar_acoes (
+  id uuid primary key default gen_random_uuid(),
+  tema_id uuid references ar_temas(id) on delete cascade,
+  reuniao_id uuid references ar_reunioes(id),
+  descricao text,
+  responsavel text,
+  data_limite date,
+  concluida boolean default false,
+  criado_em timestamptz default now()
+);
+
+-- RLS
+alter table ar_templates enable row level security;
+alter table ar_obras_templates enable row level security;
+alter table ar_reunioes enable row level security;
+alter table ar_temas enable row level security;
+alter table ar_entradas enable row level security;
+alter table ar_acoes enable row level security;
+
+create policy "all" on ar_templates for all using (true) with check (true);
+create policy "all" on ar_obras_templates for all using (true) with check (true);
+create policy "all" on ar_reunioes for all using (true) with check (true);
+create policy "all" on ar_temas for all using (true) with check (true);
+create policy "all" on ar_entradas for all using (true) with check (true);
+create policy "all" on ar_acoes for all using (true) with check (true);
+*/
+
+/* ═══ RESET ═══════════════════════════════════════ */
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --navy:#1a3a5c; --gold:#C9922A; --bg:#f4f6f9; --white:#fff;
+  --border:#dde3eb; --text:#1e2b3c; --muted:#6b7a8d;
+  --danger:#c0392b; --success:#27ae60;
+  --warn-bg:#fff8ed; --warn-border:#f0c060;
+  --r:6px;
+}
+body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;font-size:14px;color:var(--text);background:var(--bg);line-height:1.5}
+input,select,textarea,button{font-family:inherit;font-size:13px}
+button{cursor:pointer}
+
+/* ═══ NAV ═════════════════════════════════════════ */
+.nav{background:var(--navy);color:#fff;height:48px;display:flex;align-items:center;padding:0 20px;gap:14px;position:sticky;top:0;z-index:100}
+.nav-brand{display:flex;align-items:center;gap:10px;font-size:15px;font-weight:600}
+.nav-logo{width:32px;height:32px;border-radius:50%;background:var(--gold);display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#fff;flex-shrink:0}
+.nav-sep{width:1px;height:20px;background:rgba(255,255,255,.2)}
+.nav-sub{font-size:12px;opacity:.7}
+.nav-btns{display:flex;gap:4px;margin-left:auto}
+.nb{background:rgba(255,255,255,.1);color:#fff;border:none;padding:6px 14px;border-radius:5px;font-size:12px;font-weight:500}
+.nb:hover{background:rgba(255,255,255,.18)}
+.nb.active{background:var(--gold)}
+
+/* ═══ LAYOUT ══════════════════════════════════════ */
+.wrap{max-width:1100px;margin:0 auto;padding:20px 16px}
+.ph{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px;flex-wrap:wrap;gap:10px}
+.pt{font-size:18px;font-weight:600;color:var(--navy)}
+
+/* ═══ BUTTONS ═════════════════════════════════════ */
+.btn{display:inline-flex;align-items:center;gap:6px;padding:7px 14px;border-radius:var(--r);border:none;font-size:13px;font-weight:500;transition:opacity .15s}
+.btn:active{opacity:.8}
+.btn-navy{background:var(--navy);color:#fff}
+.btn-gold{background:var(--gold);color:#fff}
+.btn-out{background:#fff;color:var(--text);border:1px solid var(--border)}
+.btn-out:hover{background:var(--bg)}
+.btn-sm{padding:4px 10px;font-size:12px}
+.btn-del{background:#fdecea;color:var(--danger);border:1px solid #f5c0bb;padding:4px 8px;border-radius:4px;font-size:11px}
+.bgrp{display:flex;gap:8px;flex-wrap:wrap}
+
+/* ═══ CARD ════════════════════════════════════════ */
+.card{background:#fff;border:1px solid var(--border);border-radius:8px}
+.ch{padding:12px 16px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px}
+.cb{padding:16px}
+
+/* ═══ BADGES ══════════════════════════════════════ */
+.b{display:inline-block;padding:2px 8px;border-radius:3px;font-size:11px;font-weight:500}
+.b-obra{background:#e8f0fb;color:#2c5cad}
+.b-proj{background:#e8f5e9;color:#2e7d32}
+.b-cso{background:#fff3e0;color:#e65100}
+.b-neutral{background:#f0f2f5;color:#5a6475}
+.b-warn{background:#fff3e0;color:#e65100}
+.b-ok{background:#e8f5e9;color:#2e7d32}
+.b-closed{background:#fdecea;color:var(--danger)}
+
+/* ═══ TABLE ═══════════════════════════════════════ */
+.tbl{width:100%;border-collapse:collapse;font-size:13px}
+.tbl th{background:var(--navy);color:#fff;padding:9px 12px;text-align:left;font-weight:500;font-size:12px}
+.tbl th:first-child{border-radius:6px 0 0 0}
+.tbl th:last-child{border-radius:0 6px 0 0}
+.tbl td{padding:9px 12px;border-bottom:1px solid var(--border);vertical-align:middle}
+.tbl tr:last-child td{border-bottom:none}
+.tbl tbody tr.row:hover td{background:#f8fafc;cursor:pointer}
+
+/* ═══ FORM ════════════════════════════════════════ */
+.fg{display:flex;flex-direction:column;gap:4px}
+.fg label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:.4px}
+.fc{padding:7px 10px;border:1px solid var(--border);border-radius:var(--r);background:#fff;color:var(--text);width:100%}
+.fc:focus{outline:none;border-color:var(--navy)}
+textarea.fc{resize:vertical;min-height:56px}
+.frow{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px}
+
+/* ═══ FILTER BAR ══════════════════════════════════ */
+.fbar{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center}
+.fbar .fc{padding:6px 10px}
+.fbar input[type=text]{flex:1;min-width:140px}
+
+/* ═══ ALERT ═══════════════════════════════════════ */
+.alert{padding:10px 14px;border-radius:var(--r);margin-bottom:14px;font-size:13px;display:flex;gap:10px;align-items:flex-start}
+.alert-warn{background:var(--warn-bg);border:1px solid var(--warn-border);color:#7d5a00}
+.alert-actions{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap}
+
+/* ═══ ACCORDION SECÇÕES ═══════════════════════════ */
+.sec-acc{border:1px solid var(--border);border-radius:8px;overflow:hidden;background:#fff;margin-bottom:8px}
+.sec-hd{display:flex;align-items:center;gap:8px;padding:10px 14px;cursor:pointer;user-select:none}
+.sec-hd:hover{background:var(--bg)}
+.snum{width:24px;height:24px;border-radius:50%;background:var(--navy);color:#fff;font-size:11px;font-weight:700;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.stitle{font-size:13px;font-weight:600;flex:1;color:var(--navy)}
+.sarr{color:var(--muted);font-size:10px;transition:transform .2s;display:inline-block}
+.sec-body{border-top:1px solid var(--border);padding:12px 14px;display:none}
+.sec-body.open{display:block}
+
+/* ═══ TEMAS ═══════════════════════════════════════ */
+.tc{border:1px solid var(--border);border-radius:7px;margin-bottom:10px;overflow:hidden}
+.thd{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--bg)}
+.tref{font-size:10px;font-weight:700;color:var(--navy);background:#dceeff;padding:2px 6px;border-radius:3px}
+.ttitle{font-size:13px;font-weight:600;flex:1}
+.ttitle.closed{text-decoration:line-through;color:var(--muted)}
+.tbody{padding:10px 12px}
+
+/* ═══ ENTRADAS ════════════════════════════════════ */
+.eh{border-left:2px solid var(--border);padding-left:10px;margin-bottom:8px}
+.edate{font-size:11px;font-weight:700;color:var(--navy);margin-bottom:2px}
+.etext{font-size:12px;color:var(--muted);line-height:1.5}
+.en{border-left:3px solid var(--gold);padding-left:10px;margin-bottom:8px}
+.enlbl{font-size:10px;color:var(--gold);font-weight:700;margin-bottom:4px;text-transform:uppercase;letter-spacing:.3px}
+
+/* ═══ ACÇÕES ══════════════════════════════════════ */
+.ab{border-top:1px solid var(--border);padding-top:10px;margin-top:8px}
+.atitle{font-size:10px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px}
+.arow{display:grid;grid-template-columns:1fr 130px 120px 28px;gap:6px;margin-bottom:6px;align-items:center}
+.arow .fc{padding:5px 8px}
+.adel{width:26px;height:26px;border-radius:4px;border:none;background:#fdecea;color:var(--danger);font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+
+.tfooter{display:flex;align-items:center;gap:10px;padding:7px 12px;background:var(--bg);border-top:1px solid var(--border);flex-wrap:wrap}
+.tfooter label{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px;cursor:pointer}
+.add-tema{display:flex;align-items:center;gap:6px;padding:8px 12px;border:1px dashed var(--border);border-radius:7px;color:var(--muted);font-size:12px;background:none;width:100%}
+.add-tema:hover{background:var(--bg)}
+
+/* ═══ TEMPLATES ═══════════════════════════════════ */
+.tpl-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start}
+.tsr{display:flex;align-items:center;gap:6px;padding:5px 8px;background:var(--bg);border-radius:4px;margin-bottom:4px}
+.tsr .fc{flex:1;padding:4px 8px}
+.orow{display:flex;align-items:center;gap:10px;padding:8px 12px;border-bottom:1px solid var(--border);font-size:13px}
+.orow:last-child{border-bottom:none}
+
+/* ═══ MODAL ═══════════════════════════════════════ */
+.moverlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:200;display:flex;align-items:center;justify-content:center;padding:16px}
+.mbox{background:#fff;border-radius:10px;width:100%;max-width:540px;box-shadow:0 8px 32px rgba(0,0,0,.2)}
+.mhd{padding:14px 18px;border-bottom:1px solid var(--border);display:flex;justify-content:space-between;align-items:center}
+.mtitle{font-size:15px;font-weight:600;color:var(--navy)}
+.mclose{background:none;border:none;font-size:18px;color:var(--muted);padding:0;line-height:1}
+.mbody{padding:18px}
+.mfooter{padding:12px 18px;border-top:1px solid var(--border);display:flex;justify-content:flex-end;gap:8px}
+.moverlay.h{display:none}
+
+/* ═══ TOAST ═══════════════════════════════════════ */
+.tcts{position:fixed;bottom:20px;right:20px;display:flex;flex-direction:column;gap:8px;z-index:999}
+.tst{background:var(--navy);color:#fff;padding:10px 16px;border-radius:6px;font-size:13px;animation:tin .2s ease}
+.tst.err{background:var(--danger)}
+.tst.ok{background:var(--success)}
+@keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+/* ═══ PREVIEW / DOCX ══════════════════════════════ */
+.preview-wrap{max-width:800px;margin:0 auto}
+.doc{background:#fff;font-family:Arial,sans-serif;font-size:11pt;color:#111;padding:2cm;border:1px solid var(--border);border-radius:4px;line-height:1.45}
+.dhead{display:flex;align-items:center;gap:14px;border-bottom:2.5pt solid #1a3a5c;padding-bottom:10pt;margin-bottom:10pt}
+.dlogo{width:40pt;height:40pt;border-radius:50%;background:#1a3a5c;display:flex;align-items:center;justify-content:center;color:#C9922A;font-weight:700;font-size:16pt;flex-shrink:0}
+.ddisclaimer{border:1pt solid #bbb;padding:8pt 10pt;text-align:center;font-size:9pt;line-height:1.6;margin-bottom:10pt}
+.dmeta{width:100%;border-collapse:collapse;margin-bottom:10pt;font-size:10pt}
+.dmeta th,.dmeta td{border:1pt solid #bbb;padding:4pt 8pt;text-align:center}
+.dmeta th{background:#1a3a5c;color:#fff;font-weight:500}
+.dsec-title{display:flex;gap:8pt;background:#e4e4e4;border:1pt solid #bbb;padding:5pt 9pt;font-weight:700;font-size:10pt}
+.dsec-body{border:1pt solid #bbb;border-top:none;padding:7pt 10pt;margin-bottom:7pt;font-size:10pt}
+.dtema-title{font-weight:700;text-decoration:underline;margin:8pt 0 3pt;font-size:10pt}
+.ddate{font-weight:700;font-size:9.5pt;margin:3pt 0 1pt}
+.dtext{margin-left:14pt;font-size:9.5pt;line-height:1.5;margin-bottom:3pt}
+.dbullet{display:flex;gap:5pt;font-size:10pt;margin-bottom:3pt;line-height:1.5}
+.dac-tbl{width:100%;border-collapse:collapse;margin-top:6pt;margin-left:14pt;font-size:9pt;width:calc(100% - 14pt)}
+.dac-tbl th{background:#dce5ef;padding:3pt 6pt;border:.5pt solid #bbb;text-align:left;font-weight:600}
+.dac-tbl td{padding:3pt 6pt;border:.5pt solid #bbb}
+.dfooter{border-top:1pt solid #bbb;padding-top:5pt;display:flex;justify-content:space-between;font-size:9pt;color:#666;margin-top:14pt}
+
+/* ═══ UTILS ═══════════════════════════════════════ */
+.h{display:none!important}
+.loading{text-align:center;padding:40px;color:var(--muted);font-size:13px}
+.empty{text-align:center;padding:48px 20px;color:var(--muted);font-size:13px}
+.mt{color:var(--muted)}
+.nt{color:var(--navy)}
+
+@media(max-width:640px){
+  .tpl-grid{grid-template-columns:1fr}
+  .arow{grid-template-columns:1fr 100px 28px;grid-template-rows:auto auto}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav class="nav">
+  <div class="nav-brand">
+    <div class="nav-logo">A</div>
+    <span>AR</span>
+    <div class="nav-sep"></div>
+    <span class="nav-sub">Atas de Reunião</span>
+  </div>
+  <div class="nav-btns">
+    <button class="nb active" onclick="navTo('lista')">Lista</button>
+    <button class="nb" onclick="navTo('templates')">Templates</button>
+  </div>
+</nav>
+
+<div class="tcts" id="tcts"></div>
+
+<!-- ══════════════ LISTA ══════════════ -->
+<div id="v-lista" class="wrap">
+  <div class="ph">
+    <div class="pt">Atas de Reunião</div>
+    <button class="btn btn-navy" onclick="openNovaAR()">+ Nova AR</button>
+  </div>
+  <div class="fbar">
+    <input type="text" class="fc" id="fSrch" placeholder="Pesquisar..." oninput="filterARs()">
+    <select class="fc" id="fObra" onchange="filterARs()"><option value="">Todas as obras</option></select>
+    <select class="fc" id="fTipo" onchange="filterARs()">
+      <option value="">Todos os tipos</option>
+      <option>AR Obra</option><option>AR Projeto</option><option>AR CSO</option>
+    </select>
+  </div>
+  <div class="card"><div class="cb" style="padding:0">
+    <table class="tbl" id="tblAR">
+      <thead><tr>
+        <th style="width:75px">ID</th>
+        <th style="width:95px">Tipo</th>
+        <th>Obra / Projeto</th>
+        <th style="width:55px;text-align:center">Sem.</th>
+        <th style="width:95px">Data</th>
+        <th style="width:115px">Horário</th>
+        <th style="width:85px">Meteorologia</th>
+        <th style="width:95px;text-align:center">Acções</th>
+        <th style="width:120px"></th>
+      </tr></thead>
+      <tbody id="bodyAR"><tr><td colspan="9" class="loading">A carregar...</td></tr></tbody>
+    </table>
+  </div></div>
+</div>
+
+<!-- ══════════════ EDITAR ══════════════ -->
+<div id="v-editar" class="wrap h">
+  <div class="ph">
+    <div>
+      <div class="pt" id="editTitle">Editar AR</div>
+      <div class="mt" style="font-size:12px" id="editSub"></div>
+    </div>
+    <div class="bgrp">
+      <button class="btn btn-out" onclick="navTo('lista')">← Voltar</button>
+      <button class="btn btn-out" onclick="saveAR()">Guardar</button>
+      <button class="btn btn-gold" onclick="openPreview()">Preview / Exportar</button>
+    </div>
+  </div>
+
+  <!-- Aviso template -->
+  <div id="alertTpl" class="alert alert-warn h">
+    <span style="font-size:15px;flex-shrink:0">⚠</span>
+    <div style="flex:1">
+      <div id="alertTplMsg"></div>
+      <div class="alert-actions">
+        <button class="btn btn-out btn-sm" onclick="dismissTplAlert()">Manter versão atual</button>
+        <button class="btn btn-gold btn-sm" onclick="applyNewTpl()">Aplicar novo template</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Cabeçalho -->
+  <div class="card" style="margin-bottom:12px">
+    <div class="ch"><span style="font-size:13px;font-weight:600;color:var(--navy)">Cabeçalho da Reunião</span></div>
+    <div class="cb">
+      <div class="frow">
+        <div class="fg"><label>ID AR</label><input class="fc" id="eId" placeholder="013.0"></div>
+        <div class="fg"><label>Tipo</label>
+          <select class="fc" id="eTipo" onchange="onTipoChange()">
+            <option>AR Obra</option><option>AR Projeto</option><option>AR CSO</option>
+          </select>
+        </div>
+        <div class="fg"><label>Obra / Projeto</label>
+          <input class="fc" id="eObra" list="dlObras" placeholder="Nome da obra">
+          <datalist id="dlObras"></datalist>
+        </div>
+        <div class="fg"><label>Semana</label><input class="fc" id="eSem" type="number" min="1" max="53" placeholder="14"></div>
+        <div class="fg"><label>Data</label><input class="fc" id="eData" type="date"></div>
+        <div class="fg"><label>Início</label><input class="fc" id="eIni" type="time"></div>
+        <div class="fg"><label>Fim</label><input class="fc" id="eFim" type="time"></div>
+        <div class="fg"><label>Meteorologia</label>
+          <select class="fc" id="eMeteo">
+            <option>Sol</option><option>Parcialmente nublado</option><option>Nublado</option>
+            <option>Chuva</option><option>Aguaceiros</option><option>Trovoada</option>
+            <option>Vento forte</option><option>—</option>
+          </select>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Secções e Temas</div>
+  <div id="secsList"></div>
+</div>
+
+<!-- ══════════════ PREVIEW ══════════════ -->
+<div id="v-preview" class="wrap h">
+  <div class="preview-wrap">
+    <div class="ph">
+      <div class="pt">Preview</div>
+      <div class="bgrp">
+        <button class="btn btn-out" onclick="navTo('editar')">← Editar</button>
+        <button class="btn btn-out" onclick="window.print()">🖨 Imprimir</button>
+        <button class="btn btn-gold" onclick="exportDocx()">⬇ Exportar DOCX</button>
+      </div>
+    </div>
+    <div class="doc" id="docPreview"></div>
+  </div>
+</div>
+
+<!-- ══════════════ TEMPLATES ══════════════ -->
+<div id="v-templates" class="wrap h">
+  <div class="ph">
+    <div class="pt">Templates</div>
+    <button class="btn btn-out" onclick="navTo('lista')">← Voltar</button>
+  </div>
+  <div class="tpl-grid">
+    <div>
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Modelos padrão</div>
+      <div id="tplDefault"></div>
+    </div>
+    <div>
+      <div style="font-size:11px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:10px">Override por Obra</div>
+      <div id="tplObras"></div>
+      <div class="card" style="margin-top:10px">
+        <div class="cb" style="font-size:12px;color:var(--muted);line-height:1.7">
+          <strong class="nt">Versionamento:</strong> Quando um modelo padrão é alterado e guardado, gera nova versão. As obras com override em versão anterior recebem aviso na próxima AR. A decisão (manter ou atualizar) fica registada e aplica-se daí em diante.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: NOVA AR ══════════ -->
+<div class="moverlay h" id="mNovaAR">
+  <div class="mbox">
+    <div class="mhd"><div class="mtitle">Nova Ata de Reunião</div><button class="mclose" onclick="cm('mNovaAR')">✕</button></div>
+    <div class="mbody">
+      <div style="display:grid;gap:10px">
+        <div class="frow">
+          <div class="fg"><label>Tipo de AR</label>
+            <select class="fc" id="mTipo"><option>AR Obra</option><option>AR Projeto</option><option>AR CSO</option></select>
+          </div>
+          <div class="fg"><label>Obra / Projeto</label>
+            <input class="fc" id="mObra" list="dlObras2" placeholder="Nome da obra">
+            <datalist id="dlObras2"></datalist>
+          </div>
+        </div>
+        <div class="frow">
+          <div class="fg"><label>Data</label><input class="fc" id="mData" type="date"></div>
+          <div class="fg"><label>ID / Número</label><input class="fc" id="mId" placeholder="auto"></div>
+        </div>
+      </div>
+    </div>
+    <div class="mfooter">
+      <button class="btn btn-out" onclick="cm('mNovaAR')">Cancelar</button>
+      <button class="btn btn-navy" onclick="criarAR()">Criar AR</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════ MODAL: NOVO TEMA ════════ -->
+<div class="moverlay h" id="mNovoTema">
+  <div class="mbox">
+    <div class="mhd"><div class="mtitle" id="mTemaTitle">Novo Tema</div><button class="mclose" onclick="cm('mNovoTema')">✕</button></div>
+    <div class="mbody">
+      <div style="display:grid;gap:10px">
+        <div class="frow">
+          <div class="fg"><label>Código / Referência</label><input class="fc" id="tRef" placeholder="PE 025.0"></div>
+          <div class="fg"><label>Título do tema</label><input class="fc" id="tTitulo" placeholder="Descrição breve"></div>
+        </div>
+        <div class="fg"><label>Entrada desta reunião</label>
+          <textarea class="fc" id="tEntrada" placeholder="Texto do ponto discutido nesta reunião..."></textarea>
+        </div>
+      </div>
+    </div>
+    <div class="mfooter">
+      <button class="btn btn-out" onclick="cm('mNovoTema')">Cancelar</button>
+      <button class="btn btn-navy" onclick="guardarTema()">Adicionar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════
+   CONFIG — substituir pelos valores do projeto Supabase
+══════════════════════════════════════════════════════ */
+const SB_URL = 'https://mfrnrqmhabichzpodxyy.supabase.co';
+const SB_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1mcm5ycW1oYWJpY2h6cG9keHl5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NTY2MjQsImV4cCI6MjA5MTQzMjYyNH0.NuSb9n_qRCPF_WL1mDNANrzgVZeYNELlhOIHjjMjfMQ';
+
+const { createClient } = supabase;
+const db = createClient(SB_URL, SB_KEY);
+
+/* ══════════════════════════════════════════════════════
+   DEFAULTS
+══════════════════════════════════════════════════════ */
+const DEFAULTS = {
+  'AR Obra': [
+    {num:'01',titulo:'Reuniões'},
+    {num:'02',titulo:'Planeamento'},
+    {num:'03',titulo:'Pedidos de Esclarecimento | PEs'},
+    {num:'04',titulo:'Pedidos de Aprovação | PAs'},
+    {num:'05',titulo:'Projeto'},
+    {num:'06',titulo:'Gestão Contratual'},
+    {num:'07',titulo:'Diversos'},
+    {num:'08',titulo:'Anexos'},
+  ],
+  'AR Projeto': [
+    {num:'01',titulo:'Presenças'},
+    {num:'02',titulo:'Desenvolvimento do Projeto'},
+    {num:'03',titulo:'Pendentes'},
+    {num:'04',titulo:'Próximas entregas'},
+    {num:'05',titulo:'Diversos'},
+  ],
+  'AR CSO': [
+    {num:'01',titulo:'Reuniões'},
+    {num:'02',titulo:'Segurança e Higiene'},
+    {num:'03',titulo:'Riscos identificados'},
+    {num:'04',titulo:'Ações corretivas'},
+    {num:'05',titulo:'Diversos'},
+    {num:'06',titulo:'Anexos'},
+  ],
+};
+
+/* ══════════════════════════════════════════════════════
+   STATE
+══════════════════════════════════════════════════════ */
+let S = {
+  allARs: [],
+  ar: null,
+  arId: null,
+  temas: [],
+  secoes: [],
+  pendingTpl: null,
+  novoTemaCtx: null,
+  tplEdits: {},
+};
+
+/* ══════════════════════════════════════════════════════
+   NAV
+══════════════════════════════════════════════════════ */
+function navTo(v) {
+  document.querySelectorAll('[id^="v-"]').forEach(el => el.classList.add('h'));
+  document.getElementById('v-' + v).classList.remove('h');
+  document.querySelectorAll('.nb').forEach((b,i) =>
+    b.classList.toggle('active', ['lista','templates'][i] === v));
+  if (v === 'templates') loadTemplates();
+  if (v === 'lista') loadARs();
+}
+
+/* ══════════════════════════════════════════════════════
+   TOAST
+══════════════════════════════════════════════════════ */
+function toast(msg, type='') {
+  const t = document.createElement('div');
+  t.className = 'tst' + (type ? ' ' + type : '');
+  t.textContent = msg;
+  document.getElementById('tcts').appendChild(t);
+  setTimeout(() => t.remove(), 3200);
+}
+
+/* ══════════════════════════════════════════════════════
+   MODALS
+══════════════════════════════════════════════════════ */
+function om(id) { document.getElementById(id).classList.remove('h'); }
+function cm(id) { document.getElementById(id).classList.add('h'); }
+
+/* ══════════════════════════════════════════════════════
+   LISTA
+══════════════════════════════════════════════════════ */
+async function loadARs() {
+  const { data, error } = await db.from('ar_reunioes').select('*').order('data', { ascending: false });
+  if (error) { toast('Erro ao carregar', 'err'); return; }
+  S.allARs = data || [];
+  buildObraFilter();
+  renderARTable(S.allARs);
+}
+
+function buildObraFilter() {
+  const obras = [...new Set(S.allARs.map(a => a.obra_nome))].sort();
+  const sel = document.getElementById('fObra');
+  sel.innerHTML = '<option value="">Todas as obras</option>' + obras.map(o => `<option>${esc(o)}</option>`).join('');
+  const dl = obras.map(o => `<option>${esc(o)}</option>`).join('');
+  document.getElementById('dlObras').innerHTML = dl;
+  document.getElementById('dlObras2').innerHTML = dl;
+}
+
+function filterARs() {
+  const q = document.getElementById('fSrch').value.toLowerCase();
+  const o = document.getElementById('fObra').value;
+  const t = document.getElementById('fTipo').value;
+  renderARTable(S.allARs.filter(a =>
+    (!q || (a.numero||'').toLowerCase().includes(q) || (a.obra_nome||'').toLowerCase().includes(q)) &&
+    (!o || a.obra_nome === o) &&
+    (!t || a.tipo === t)
+  ));
+}
+
+function renderARTable(ars) {
+  const tbody = document.getElementById('bodyAR');
+  if (!ars.length) {
+    tbody.innerHTML = '<tr><td colspan="9"><div class="empty">Nenhuma AR encontrada</div></td></tr>';
+    return;
+  }
+  tbody.innerHTML = ars.map(a => {
+    const bc = a.tipo === 'AR Obra' ? 'b-obra' : a.tipo === 'AR Projeto' ? 'b-proj' : 'b-cso';
+    const dt = fmtDate(a.data);
+    return `<tr class="row" onclick="editarAR('${a.id}')">
+      <td><strong>${esc(a.numero||'—')}</strong></td>
+      <td><span class="b ${bc}">${esc(a.tipo)}</span></td>
+      <td>${esc(a.obra_nome)}</td>
+      <td style="text-align:center">${a.semana||'—'}</td>
+      <td>${dt}</td>
+      <td>${esc(a.inicio||'—')} – ${esc(a.fim||'—')}</td>
+      <td>${esc(a.meteorologia||'—')}</td>
+      <td style="text-align:center" id="ac-${a.id}"><span class="b b-neutral">—</span></td>
+      <td>
+        <button class="btn btn-out btn-sm" onclick="event.stopPropagation();editarAR('${a.id}')">Editar</button>
+        <button class="btn btn-out btn-sm" style="margin-left:4px" onclick="event.stopPropagation();previewAR('${a.id}')">Preview</button>
+      </td>
+    </tr>`;
+  }).join('');
+  loadAcoesBadges(ars);
+}
+
+async function loadAcoesBadges(ars) {
+  for (const a of ars) {
+    const { count } = await db.from('ar_acoes')
+      .select('*', { count: 'exact', head: true })
+      .eq('reuniao_id', a.id).eq('concluida', false);
+    const el = document.getElementById('ac-' + a.id);
+    if (el) el.innerHTML = count > 0
+      ? `<span class="b b-warn">${count} pendente${count > 1 ? 's' : ''}</span>`
+      : `<span class="b b-neutral">—</span>`;
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   NOVA AR
+══════════════════════════════════════════════════════ */
+function openNovaAR() {
+  document.getElementById('mData').value = new Date().toISOString().split('T')[0];
+  document.getElementById('mId').value = '';
+  document.getElementById('mObra').value = '';
+  om('mNovaAR');
+}
+
+async function criarAR() {
+  const tipo  = document.getElementById('mTipo').value;
+  const obra  = document.getElementById('mObra').value.trim();
+  const data  = document.getElementById('mData').value;
+  const num   = document.getElementById('mId').value.trim();
+  if (!obra || !data) { toast('Preenche a obra e a data', 'err'); return; }
+  const tpl  = await getTplForObra(obra, tipo);
+  const auto = num || await suggestNumero(obra, tipo);
+  const { data: ar, error } = await db.from('ar_reunioes').insert({
+    obra_nome: obra, tipo, data, numero: auto,
+    semana: weekNum(new Date(data)),
+    template_id: tpl?.id || null,
+    template_versao: tpl?.versao || null,
+  }).select().single();
+  if (error) { toast('Erro ao criar AR', 'err'); return; }
+  cm('mNovaAR');
+  editarAR(ar.id);
+}
+
+async function suggestNumero(obra, tipo) {
+  const { data } = await db.from('ar_reunioes')
+    .select('numero').eq('obra_nome', obra).eq('tipo', tipo)
+    .order('criado_em', { ascending: false }).limit(1);
+  if (!data?.length) return '001.0';
+  const last = parseInt((data[0].numero || '000').split('.')[0]);
+  return String(last + 1).padStart(3,'0') + '.0';
+}
+
+function weekNum(d) {
+  const j = new Date(d.getFullYear(), 0, 1);
+  return Math.ceil((((d - j) / 86400000) + j.getDay() + 1) / 7);
+}
+
+/* ══════════════════════════════════════════════════════
+   EDITAR
+══════════════════════════════════════════════════════ */
+async function editarAR(id) {
+  navTo('editar');
+  S.arId = id;
+  const { data: ar } = await db.from('ar_reunioes').select('*').eq('id', id).single();
+  S.ar = ar;
+  document.getElementById('eId').value    = ar.numero || '';
+  document.getElementById('eTipo').value  = ar.tipo   || 'AR Obra';
+  document.getElementById('eObra').value  = ar.obra_nome || '';
+  document.getElementById('eSem').value   = ar.semana || '';
+  document.getElementById('eData').value  = ar.data   || '';
+  document.getElementById('eIni').value   = ar.inicio || '';
+  document.getElementById('eFim').value   = ar.fim    || '';
+  document.getElementById('eMeteo').value = ar.meteorologia || 'Sol';
+  document.getElementById('editTitle').textContent = `AR ${ar.numero||''} · ${ar.tipo}`;
+  document.getElementById('editSub').textContent   = `${ar.obra_nome} · ${fmtDate(ar.data)}`;
+  await checkTplVersion(ar);
+  await loadSecoes(ar);
+}
+
+async function saveAR() {
+  if (!S.ar) return;
+  const u = {
+    numero:      document.getElementById('eId').value,
+    tipo:        document.getElementById('eTipo').value,
+    obra_nome:   document.getElementById('eObra').value,
+    semana:      parseInt(document.getElementById('eSem').value)||null,
+    data:        document.getElementById('eData').value,
+    inicio:      document.getElementById('eIni').value || null,
+    fim:         document.getElementById('eFim').value || null,
+    meteorologia:document.getElementById('eMeteo').value,
+  };
+  const { error } = await db.from('ar_reunioes').update(u).eq('id', S.arId);
+  if (error) toast('Erro ao guardar', 'err');
+  else { Object.assign(S.ar, u); toast('Guardado ✓','ok'); }
+}
+
+async function onTipoChange() {
+  if (!S.ar) return;
+  S.ar.tipo = document.getElementById('eTipo').value;
+  await loadSecoes(S.ar);
+}
+
+/* ══════════════════════════════════════════════════════
+   TEMPLATE SYSTEM
+══════════════════════════════════════════════════════ */
+async function getTplForObra(obra, tipo) {
+  const { data: ov } = await db.from('ar_obras_templates')
+    .select('*, tpl:ar_templates(*)').eq('obra_nome', obra).eq('tipo', tipo).maybeSingle();
+  if (ov?.tpl) return ov.tpl;
+  const { data: def } = await db.from('ar_templates')
+    .select('*').eq('tipo', tipo).eq('ativo', true)
+    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+  return def;
+}
+
+async function checkTplVersion(ar) {
+  if (!ar.template_id) { hideAlert(); return; }
+  const { data: latest } = await db.from('ar_templates')
+    .select('*').eq('tipo', ar.tipo).eq('ativo', true)
+    .order('criado_em', { ascending: false }).limit(1).maybeSingle();
+  if (latest && latest.id !== ar.template_id) {
+    S.pendingTpl = latest;
+    document.getElementById('alertTplMsg').innerHTML =
+      `<strong>Template atualizado:</strong> O modelo "${ar.tipo}" evoluiu para <strong>v${latest.versao}</strong>.`+
+      ` Esta AR usa v${ar.template_versao||'anterior'}. A partir desta AR, pode aplicar o novo modelo.`;
+    document.getElementById('alertTpl').classList.remove('h');
+  } else hideAlert();
+}
+
+function hideAlert() { document.getElementById('alertTpl').classList.add('h'); }
+function dismissTplAlert() { S.pendingTpl = null; hideAlert(); }
+
+async function applyNewTpl() {
+  if (!S.pendingTpl) return;
+  await db.from('ar_reunioes').update({
+    template_id: S.pendingTpl.id,
+    template_versao: S.pendingTpl.versao,
+  }).eq('id', S.arId);
+  S.ar.template_id = S.pendingTpl.id;
+  S.ar.template_versao = S.pendingTpl.versao;
+  S.pendingTpl = null;
+  hideAlert();
+  await loadSecoes(S.ar);
+  toast('Template aplicado ✓','ok');
+}
+
+function getSecoes(ar) {
+  return DEFAULTS[ar.tipo] || DEFAULTS['AR Obra'];
+}
+
+/* ══════════════════════════════════════════════════════
+   SECÇÕES E TEMAS
+══════════════════════════════════════════════════════ */
+async function loadSecoes(ar) {
+  const { data } = await db.from('ar_temas')
+    .select('*, entradas:ar_entradas(*), acoes:ar_acoes(*)')
+    .eq('obra_nome', ar.obra_nome)
+    .or(`fechado_em.is.null,fechado_em.eq.${S.arId}`)
+    .order('ordem');
+  S.temas = data || [];
+  S.secoes = getSecoes(ar);
+  document.getElementById('secsList').innerHTML = S.secoes.map(s => renderSec(s)).join('');
+}
+
+function renderSec(s) {
+  const temas = S.temas.filter(t => t.secao_num === s.num);
+  const hasAcoes = temas.some(t => (t.acoes||[]).some(a => !a.concluida));
+  return `<div class="sec-acc" id="sec-${s.num}">
+    <div class="sec-hd" onclick="toggleSec('${s.num}')">
+      <span class="snum">${s.num}</span>
+      <span class="stitle">${esc(s.titulo)}</span>
+      ${temas.length ? `<span class="b b-neutral" style="font-size:10px">${temas.length} tema${temas.length>1?'s':''}</span>` : ''}
+      ${hasAcoes ? `<span class="b b-warn" style="font-size:10px">● acções</span>` : ''}
+      <span class="sarr" id="sarr-${s.num}">▶</span>
+    </div>
+    <div class="sec-body" id="sb-${s.num}">
+      ${!temas.length ? `<p class="mt" style="font-size:12px;font-style:italic;margin-bottom:10px">Sem desenvolvimentos — adicione um tema.</p>` : ''}
+      ${temas.map(t => renderTema(t)).join('')}
+      <button class="add-tema" onclick="openNovoTema('${s.num}','${esc(s.titulo)}')">
+        <span>+</span> Adicionar novo tema
+      </button>
+    </div>
+  </div>`;
+}
+
+function renderTema(t) {
+  const entradas = (t.entradas||[]).sort((a,b) => new Date(a.criado_em)-new Date(b.criado_em));
+  const acoes    = t.acoes || [];
+  const isClosed = t.fechado_em === S.arId;
+  const arDt     = S.ar?.data ? fmtDate(S.ar.data) : 'esta reunião';
+  const thisEntry = entradas.find(e => e.reuniao_id === S.arId);
+  const prevs     = entradas.filter(e => e.reuniao_id !== S.arId);
+
+  return `<div class="tc" id="tc-${t.id}">
+    <div class="thd">
+      ${t.codigo_ref ? `<span class="tref">${esc(t.codigo_ref)}</span>` : ''}
+      <span class="ttitle ${isClosed?'closed':''}">${esc(t.titulo)}</span>
+      ${isClosed ? `<span class="b b-closed">ponto terminado</span>` : ''}
+    </div>
+    <div class="tbody">
+      ${prevs.map(e=>`
+      <div class="eh">
+        <div class="edate">${esc(e.data_label||fmtDate(e.criado_em))}</div>
+        <div class="etext">${esc(e.conteudo||'—')}</div>
+      </div>`).join('')}
+      <div class="en">
+        <div class="enlbl">● Esta reunião (${arDt})</div>
+        <textarea class="fc" data-tid="${t.id}" data-eid="${thisEntry?.id||''}"
+          onblur="saveEntrada(this)"
+          placeholder="Registo desta reunião para este tema...">${esc(thisEntry?.conteudo||'')}</textarea>
+      </div>
+      <!-- ACÇÕES -->
+      <div class="ab">
+        <div class="atitle">Acções</div>
+        <div id="ar-${t.id}">
+          ${acoes.map(a=>renderAcao(a)).join('')}
+        </div>
+        <button class="btn btn-out btn-sm" style="margin-top:4px" onclick="addAcao('${t.id}')">+ Acção</button>
+      </div>
+    </div>
+    <div class="tfooter">
+      <label>
+        <input type="checkbox" ${isClosed?'checked':''} onchange="toggleTerminar('${t.id}',this.checked)">
+        Terminar ponto nesta AR
+      </label>
+      <button class="btn btn-del" style="margin-left:auto" onclick="delTema('${t.id}')">Remover tema</button>
+    </div>
+  </div>`;
+}
+
+function renderAcao(a) {
+  return `<div class="arow" id="arow-${a.id}">
+    <input class="fc" value="${esc(a.descricao||'')}" placeholder="Descrição da acção"
+      onblur="updAcao('${a.id}','descricao',this.value)">
+    <input class="fc" value="${esc(a.responsavel||'')}" placeholder="Responsável"
+      onblur="updAcao('${a.id}','responsavel',this.value)">
+    <input class="fc" type="date" value="${a.data_limite||''}"
+      onchange="updAcao('${a.id}','data_limite',this.value)">
+    <button class="adel" onclick="delAcao('${a.id}')">✕</button>
+  </div>`;
+}
+
+function toggleSec(num) {
+  const b = document.getElementById('sb-' + num);
+  const a = document.getElementById('sarr-' + num);
+  const o = b.classList.toggle('open');
+  a.style.transform = o ? 'rotate(90deg)' : '';
+}
+
+/* ══════════════════════════════════════════════════════
+   CRUD: ENTRADAS
+══════════════════════════════════════════════════════ */
+async function saveEntrada(el) {
+  const temaId  = el.dataset.tid;
+  const entId   = el.dataset.eid;
+  const conteudo = el.value.trim();
+  const arDt    = S.ar?.data ? fmtDate(S.ar.data) : '';
+  if (entId) {
+    await db.from('ar_entradas').update({ conteudo }).eq('id', entId);
+  } else if (conteudo) {
+    const { data: e } = await db.from('ar_entradas').insert({
+      tema_id: temaId, reuniao_id: S.arId,
+      data_label: arDt, conteudo,
+    }).select().single();
+    if (e) el.dataset.eid = e.id;
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   CRUD: TEMAS
+══════════════════════════════════════════════════════ */
+function openNovoTema(secNum, secTitulo) {
+  S.novoTemaCtx = { secNum, secTitulo };
+  document.getElementById('tRef').value = '';
+  document.getElementById('tTitulo').value = '';
+  document.getElementById('tEntrada').value = '';
+  document.getElementById('mTemaTitle').textContent = `Novo Tema — ${secTitulo}`;
+  om('mNovoTema');
+}
+
+async function guardarTema() {
+  const ref    = document.getElementById('tRef').value.trim();
+  const titulo = document.getElementById('tTitulo').value.trim();
+  const entrada= document.getElementById('tEntrada').value.trim();
+  if (!titulo) { toast('Preenche o título','err'); return; }
+  const ar = S.ar;
+  const { secNum, secTitulo } = S.novoTemaCtx;
+  const { data: t, error } = await db.from('ar_temas').insert({
+    obra_nome: ar.obra_nome, secao_num: secNum, secao_titulo: secTitulo,
+    titulo, codigo_ref: ref||null, aberto_em: S.arId,
+    ordem: S.temas.filter(t=>t.secao_num===secNum).length,
+  }).select().single();
+  if (error) { toast('Erro ao criar tema','err'); return; }
+  if (entrada) {
+    await db.from('ar_entradas').insert({
+      tema_id: t.id, reuniao_id: S.arId,
+      data_label: fmtDate(ar.data), conteudo: entrada,
+    });
+  }
+  cm('mNovoTema');
+  await loadSecoes(ar);
+  toast('Tema adicionado ✓','ok');
+}
+
+async function delTema(id) {
+  if (!confirm('Remover este tema e todo o seu histórico?')) return;
+  await db.from('ar_temas').delete().eq('id', id);
+  await loadSecoes(S.ar);
+  toast('Tema removido','ok');
+}
+
+async function toggleTerminar(id, checked) {
+  const val = checked ? S.arId : null;
+  await db.from('ar_temas').update({ fechado_em: val }).eq('id', id);
+  const el = document.querySelector(`#tc-${id} .ttitle`);
+  if (el) { el.classList.toggle('closed', checked); }
+}
+
+/* ══════════════════════════════════════════════════════
+   CRUD: ACÇÕES
+══════════════════════════════════════════════════════ */
+async function addAcao(temaId) {
+  const { data: a } = await db.from('ar_acoes').insert({
+    tema_id: temaId, reuniao_id: S.arId,
+    descricao:'', responsavel:'', concluida:false,
+  }).select().single();
+  const wrap = document.getElementById('ar-' + temaId);
+  if (wrap && a) {
+    const d = document.createElement('div');
+    d.innerHTML = renderAcao(a);
+    wrap.appendChild(d.firstElementChild);
+  }
+}
+
+async function updAcao(id, field, val) {
+  await db.from('ar_acoes').update({ [field]: val||null }).eq('id', id);
+}
+
+async function delAcao(id) {
+  await db.from('ar_acoes').delete().eq('id', id);
+  document.getElementById('arow-' + id)?.remove();
+}
+
+/* ══════════════════════════════════════════════════════
+   PREVIEW
+══════════════════════════════════════════════════════ */
+async function previewAR(id) {
+  S.arId = id;
+  const { data: ar } = await db.from('ar_reunioes').select('*').eq('id', id).single();
+  S.ar = ar;
+  await loadTemasPreview(ar);
+  buildPreview(ar);
+  navTo('preview');
+}
+
+async function openPreview() {
+  await saveAR();
+  await loadTemasPreview(S.ar);
+  buildPreview(S.ar);
+  navTo('preview');
+}
+
+async function loadTemasPreview(ar) {
+  const { data } = await db.from('ar_temas')
+    .select('*, entradas:ar_entradas(*), acoes:ar_acoes(*)')
+    .eq('obra_nome', ar.obra_nome)
+    .order('secao_num').order('ordem');
+  S.temas = data || [];
+}
+
+function buildPreview(ar) {
+  const dt = fmtDate(ar.data);
+  const secoes = getSecoes(ar);
+  let secsHtml = '';
+
+  secoes.forEach(s => {
+    // For preview: show themes that are open OR were closed in this meeting
+    const temas = S.temas.filter(t =>
+      t.secao_num === s.num &&
+      (t.fechado_em === null || t.fechado_em === S.arId || t.aberto_em === S.arId)
+    );
+    if (!temas.length) return;
+    let body = '';
+    temas.forEach(t => {
+      const entradas = (t.entradas||[]).sort((a,b)=>new Date(a.criado_em)-new Date(b.criado_em));
+      const acoes    = (t.acoes||[]).filter(a=>!a.concluida);
+      const tit = t.codigo_ref ? `${t.titulo} (${t.codigo_ref}):` : `${t.titulo}:`;
+      body += `<div class="dtema-title">● ${esc(tit)}</div>`;
+      entradas.forEach(e => {
+        body += `<div class="ddate">${esc(e.data_label||fmtDate(e.criado_em))}</div>
+        <div class="dtext">${esc(e.conteudo||'')}</div>`;
+      });
+      if (acoes.length) {
+        body += `<table class="dac-tbl">
+          <thead><tr>
+            <th style="width:55%">Acção</th>
+            <th style="width:25%">Responsável</th>
+            <th style="width:20%">Data limite</th>
+          </tr></thead>
+          <tbody>${acoes.map(a=>`<tr>
+            <td>${esc(a.descricao||'')}</td>
+            <td>${esc(a.responsavel||'')}</td>
+            <td>${a.data_limite?fmtDate(a.data_limite):''}</td>
+          </tr>`).join('')}</tbody>
+        </table>`;
+      }
+    });
+    secsHtml += `<div class="dsec-title"><strong>${s.num}</strong> ${esc(s.titulo)}:</div>
+    <div class="dsec-body">${body}</div>`;
+  });
+
+  document.getElementById('docPreview').innerHTML = `
+  <div class="dhead">
+    <div class="dlogo">A</div>
+    <div>
+      <div style="font-size:14pt;font-weight:700;color:#1a3a5c">Ata de Reunião &nbsp;|&nbsp; AR</div>
+      <div style="font-size:9pt;color:#666">${esc(ar.obra_nome)}</div>
+    </div>
+  </div>
+  <div class="ddisclaimer">
+    <strong>A presente Ata de Reunião é uma transcrição dos registos, ordens e decisões assumidas, em sede de Reunião de Obra.</strong><br>
+    A não distribuição desta Ata, não iliba nenhum dos presentes a dar seguimento aos assuntos tratados e acordados.<br>
+    <strong>Se até 48 horas, após a receção desta Ata, não existirem pedidos de retificação ao seu teor, a mesma considera-se aceite, na sua forma e conteúdo, devendo ser assinada na reunião seguinte.</strong><br>
+    A Ata de Reunião será distribuída aos integrantes do Impresso Intervenientes e Contactos, por mail.
+  </div>
+  <table class="dmeta">
+    <thead><tr>
+      <th style="width:10%">Id</th>
+      <th style="width:22%">Semana e Data</th>
+      <th style="width:16%">Início</th>
+      <th style="width:16%">Fim</th>
+      <th style="width:20%">Meteorologia</th>
+      <th style="width:16%">Tipo</th>
+    </tr></thead>
+    <tbody><tr>
+      <td>${esc(ar.numero||'—')}</td>
+      <td>${ar.semana||'—'} &nbsp;·&nbsp; ${dt}</td>
+      <td>${esc(ar.inicio||'—')}</td>
+      <td>${esc(ar.fim||'—')}</td>
+      <td>${esc(ar.meteorologia||'—')}</td>
+      <td>${esc(ar.tipo)}</td>
+    </tr></tbody>
+  </table>
+  <div style="text-align:center;font-weight:700;font-size:10pt;background:#e4e4e4;padding:5pt;margin-bottom:8pt;border:1pt solid #bbb">
+    Descrição das Situações Operacionais
+  </div>
+  ${secsHtml}
+  <div class="dfooter">
+    <span>${esc(ar.obra_nome)}</span>
+    <span>${dt}</span>
+    <span>1 | 1</span>
+  </div>`;
+}
+
+/* ══════════════════════════════════════════════════════
+   DOCX EXPORT
+══════════════════════════════════════════════════════ */
+async function exportDocx() {
+  if (!S.ar) return;
+  toast('A gerar DOCX...');
+  try {
+    const {
+      Document, Packer, Paragraph, TextRun, Table, TableRow, TableCell,
+      AlignmentType, BorderStyle, WidthType, ShadingType,
+      Header, Footer, PageNumber,
+    } = docx;
+
+    const ar = S.ar;
+    const dt = fmtDate(ar.data);
+    const navy = '1a3a5c';
+    const CW = 9356; // A4 com margens 1.7cm = ~9356 DXA
+    const brd  = { style: BorderStyle.SINGLE, size: 4, color: '999999' };
+    const brd2 = { style: BorderStyle.SINGLE, size: 8, color: navy };
+    const BORDS = { top: brd, bottom: brd, left: brd, right: brd };
+    const NOBRD = { top:{style:BorderStyle.NONE}, bottom:{style:BorderStyle.NONE}, left:{style:BorderStyle.NONE}, right:{style:BorderStyle.NONE} };
+
+    function mkCell(children, w, opts={}) {
+      return new TableCell({
+        width: { size: w, type: WidthType.DXA },
+        borders: opts.borders ?? BORDS,
+        shading: opts.shading,
+        margins: { top:60, bottom:60, left:100, right:100 },
+        verticalAlign: 'center',
+        children: Array.isArray(children) ? children :
+          [new Paragraph({ alignment: opts.align??AlignmentType.LEFT, children: [children] })],
+      });
+    }
+
+    function hCell(text, w) {
+      return new TableCell({
+        width: { size: w, type: WidthType.DXA },
+        borders: BORDS,
+        shading: { fill: navy, type: ShadingType.CLEAR },
+        margins: { top:60, bottom:60, left:100, right:100 },
+        children: [new Paragraph({ alignment: AlignmentType.CENTER,
+          children: [new TextRun({ text, bold:true, color:'FFFFFF', size:18, font:'Arial' })]
+        })]
+      });
+    }
+
+    function run(text, opts={}) {
+      return new TextRun({ text: String(text||''), font:'Arial', size:opts.size??18,
+        bold:opts.bold, color:opts.color, underline:opts.ul?{}:undefined, italics:opts.it });
+    }
+
+    function para(runs, opts={}) {
+      return new Paragraph({
+        alignment: opts.align ?? AlignmentType.LEFT,
+        indent: opts.indent ? { left: opts.indent } : undefined,
+        spacing: { before: opts.before??0, after: opts.after??40 },
+        children: Array.isArray(runs) ? runs : [runs],
+      });
+    }
+
+    const children = [];
+
+    // ── Disclaimer ──────────────────────────────────
+    children.push(new Table({
+      width: { size: CW, type: WidthType.DXA }, columnWidths: [CW],
+      rows: [new TableRow({ children: [new TableCell({
+        width: { size: CW, type: WidthType.DXA }, borders: BORDS,
+        margins: { top:80, bottom:80, left:160, right:160 },
+        children: [
+          para([run('A presente Ata de Reunião é uma transcrição dos registos, ordens e decisões assumidas, em sede de Reunião de Obra.', {bold:true})], { align: AlignmentType.CENTER }),
+          para([run('A não distribuição desta Ata, não iliba nenhum dos presentes a dar seguimento aos assuntos tratados e acordados.', {bold:true})], { align: AlignmentType.CENTER }),
+          para([run('Se até 48 horas, após a receção desta Ata, não existirem pedidos de retificação ao seu teor, a mesma considera-se aceite, na sua forma e conteúdo, devendo ser assinada na reunião seguinte.', {bold:true})], { align: AlignmentType.CENTER }),
+          para([run('A Ata de Reunião será distribuída aos integrantes do Impresso Intervenientes e Contactos, por mail.', {bold:true})], { align: AlignmentType.CENTER, after:0 }),
+        ]
+      })] })]
+    }));
+    children.push(para([], { before: 100, after: 0 }));
+
+    // ── Meta table ───────────────────────────────────
+    const cw = [
+      Math.round(CW * 0.10),
+      Math.round(CW * 0.22),
+      Math.round(CW * 0.16),
+      Math.round(CW * 0.16),
+      Math.round(CW * 0.20),
+      CW - Math.round(CW * 0.10) - Math.round(CW * 0.22) - Math.round(CW * 0.16) * 2 - Math.round(CW * 0.20),
+    ];
+    children.push(new Table({
+      width: { size: CW, type: WidthType.DXA }, columnWidths: cw,
+      rows: [
+        new TableRow({ children: [
+          hCell('Id', cw[0]), hCell('Semana e Data', cw[1]), hCell('Início', cw[2]),
+          hCell('Fim', cw[3]), hCell('Meteorologia', cw[4]), hCell('Tipo', cw[5]),
+        ]}),
+        new TableRow({ children: [
+          mkCell(run(ar.numero||'—'), cw[0], { align: AlignmentType.CENTER }),
+          mkCell(run(`${ar.semana||'—'}   ·   ${dt}`), cw[1], { align: AlignmentType.CENTER }),
+          mkCell(run(ar.inicio||'—'), cw[2], { align: AlignmentType.CENTER }),
+          mkCell(run(ar.fim||'—'), cw[3], { align: AlignmentType.CENTER }),
+          mkCell(run(ar.meteorologia||'—'), cw[4], { align: AlignmentType.CENTER }),
+          mkCell(run(ar.tipo), cw[5], { align: AlignmentType.CENTER }),
+        ]}),
+      ]
+    }));
+    children.push(para([], { before: 80, after: 0 }));
+
+    // ── "Descrição" header ────────────────────────────
+    children.push(new Table({
+      width: { size: CW, type: WidthType.DXA }, columnWidths: [CW],
+      rows: [new TableRow({ children: [new TableCell({
+        width: { size: CW, type: WidthType.DXA }, borders: BORDS,
+        shading: { fill: 'e0e0e0', type: ShadingType.CLEAR },
+        margins: { top:60, bottom:60, left:120, right:120 },
+        children: [para([run('Descrição das Situações Operacionais', {bold:true, size:20})], { align: AlignmentType.CENTER, after:0 })]
+      })] })]
+    }));
+    children.push(para([], { before: 80, after: 0 }));
+
+    // ── Sections ─────────────────────────────────────
+    const secoes = getSecoes(ar);
+    for (const s of secoes) {
+      const temas = S.temas.filter(t =>
+        t.secao_num === s.num &&
+        (t.fechado_em === null || t.fechado_em === S.arId || t.aberto_em === S.arId)
+      );
+      if (!temas.length) continue;
+
+      // Section header (2-col table: num | title)
+      const nW = 700; const tW = CW - nW;
+      children.push(new Table({
+        width: { size: CW, type: WidthType.DXA }, columnWidths: [nW, tW],
+        rows: [new TableRow({ children: [
+          mkCell(run(s.num, {bold:true}), nW, { shading:{ fill:'e8e8e8', type:ShadingType.CLEAR } }),
+          mkCell(run(s.titulo + ':', {bold:true}), tW, { shading:{ fill:'e8e8e8', type:ShadingType.CLEAR } }),
+        ]})]
+      }));
+
+      // Section body
+      const bodyParas = [];
+      temas.forEach(t => {
+        const entradas = (t.entradas||[]).sort((a,b)=>new Date(a.criado_em)-new Date(b.criado_em));
+        const acoes    = (t.acoes||[]).filter(a=>!a.concluida);
+        const tit = t.codigo_ref ? `${t.titulo} (${t.codigo_ref}):` : `${t.titulo}:`;
+
+        bodyParas.push(para([
+          run('●  ', {bold:true}),
+          run(tit, {bold:true, ul:true}),
+        ], { indent:200, before:120, after:40 }));
+
+        entradas.forEach(e => {
+          bodyParas.push(para([run(e.data_label||fmtDate(e.criado_em), {bold:true})], { indent:400, before:60, after:0 }));
+          bodyParas.push(para([run(e.conteudo||'')], { indent:600, before:0, after:40 }));
+        });
+
+        if (acoes.length) {
+          // Acções as inline styled list (tables inside cells aren't reliable in docx.js)
+          bodyParas.push(para([run('Acções:', {bold:true, it:false})], { indent:400, before:60, after:20 }));
+          acoes.forEach(a => {
+            bodyParas.push(para([
+              run('–  ', {}),
+              run(`${a.descricao||''}`, {}),
+              run(`  |  Responsável: `, {bold:true}),
+              run(a.responsavel||'—', {}),
+              run(`  |  Data: `, {bold:true}),
+              run(a.data_limite ? fmtDate(a.data_limite) : '—', {}),
+            ], { indent:600, before:0, after:20 }));
+          });
+        }
+      });
+
+      children.push(new Table({
+        width: { size: CW, type: WidthType.DXA }, columnWidths: [CW],
+        rows: [new TableRow({ children: [new TableCell({
+          width: { size: CW, type: WidthType.DXA },
+          borders: { top:{ style:BorderStyle.NONE }, bottom:brd, left:brd, right:brd },
+          margins: { top:60, bottom:60, left:100, right:100 },
+          children: bodyParas,
+        })] })]
+      }));
+      children.push(para([], { before: 80, after: 0 }));
+    }
+
+    // ── Document ─────────────────────────────────────
+    const doc = new Document({
+      styles: { default: { document: { run: { font:'Arial', size:20 } } } },
+      sections: [{
+        properties: {
+          page: {
+            size: { width:11906, height:16838 },
+            margin: { top:964, right:964, bottom:964, left:964 },
+          }
+        },
+        headers: { default: new Header({ children: [new Table({
+          width: { size: CW, type: WidthType.DXA }, columnWidths: [500, CW-500],
+          rows: [new TableRow({ children: [
+            mkCell(para([run('A', {bold:true, size:30, color:'C9922A'})], {after:0}), 500, { borders: NOBRD }),
+            new TableCell({
+              width: { size: CW-500, type: WidthType.DXA }, borders: NOBRD,
+              children: [new Paragraph({
+                border: { bottom: { style:BorderStyle.SINGLE, size:12, color:navy, space:2 } },
+                children: [run('Ata de Reunião  |  AR', {bold:true, size:24, color:navy})]
+              })]
+            }),
+          ]})]
+        })] }) },
+        footers: { default: new Footer({ children: [new Paragraph({
+          border: { top: { style:BorderStyle.SINGLE, size:4, color:'AAAAAA', space:2 } },
+          alignment: AlignmentType.LEFT,
+          children: [
+            run(ar.obra_nome + '   |   ' + dt + '   |   Pág. ', {size:16, color:'888888'}),
+            new TextRun({ children: [PageNumber.CURRENT], size:16, font:'Arial', color:'888888' }),
+            run(' / ', {size:16, color:'888888'}),
+            new TextRun({ children: [PageNumber.TOTAL_PAGES], size:16, font:'Arial', color:'888888' }),
+          ]
+        })] }) },
+        children,
+      }]
+    });
+
+    const blob = await Packer.toBlob(doc);
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `AR_${ar.numero}_${(ar.obra_nome||'').replace(/\s+/g,'_')}_${ar.data||''}.docx`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast('DOCX exportado ✓','ok');
+  } catch(e) {
+    console.error(e);
+    toast('Erro DOCX: ' + e.message, 'err');
+  }
+}
+
+/* ══════════════════════════════════════════════════════
+   TEMPLATES VIEW
+══════════════════════════════════════════════════════ */
+async function loadTemplates() {
+  const { data: tpls } = await db.from('ar_templates').select('*').order('tipo').order('criado_em', { ascending:false });
+  const { data: ovrs  } = await db.from('ar_obras_templates').select('*, tpl:ar_templates(*)');
+  renderDefaultTpls(tpls||[]);
+  renderObrasTpls(ovrs||[]);
+}
+
+function renderDefaultTpls(tpls) {
+  S.tplEdits = {};
+  const tipos = ['AR Obra', 'AR Projeto', 'AR CSO'];
+  document.getElementById('tplDefault').innerHTML = tipos.map(tipo => {
+    const tpl = tpls.find(t => t.tipo===tipo && t.ativo);
+    const secs = tpl?.secoes || DEFAULTS[tipo] || [];
+    S.tplEdits[tipo] = JSON.parse(JSON.stringify(secs));
+    const bc = tipo==='AR Obra'?'b-obra':tipo==='AR Projeto'?'b-proj':'b-cso';
+    return `<div class="card" style="margin-bottom:12px">
+      <div class="ch">
+        <span class="b ${bc}">${tipo}</span>
+        <span style="flex:1"></span>
+        <span style="font-size:11px;color:var(--muted)">${tpl?'v'+tpl.versao:'padrão'}</span>
+        <button class="btn btn-out btn-sm" onclick="saveTpl('${tipo}')">Guardar nova versão</button>
+      </div>
+      <div class="cb">
+        <div id="tsecs-${tipo.replace(/\s/g,'_')}">
+          ${secs.map((s,i)=>`<div class="tsr">
+            <span class="snum">${s.num}</span>
+            <input class="fc" value="${esc(s.titulo)}" oninput="S.tplEdits['${tipo}'][${i}].titulo=this.value">
+            <button class="btn btn-del" onclick="rmTplSec('${tipo}',${i})">✕</button>
+          </div>`).join('')}
+        </div>
+        <button class="add-tema" style="margin-top:8px" onclick="addTplSec('${tipo}')">+ Secção</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+function addTplSec(tipo) {
+  const secs = S.tplEdits[tipo];
+  const num = String(secs.length+1).padStart(2,'0');
+  secs.push({ num, titulo:'Nova secção' });
+  renderDefaultTpls([]); // reload edit UI
+}
+
+function rmTplSec(tipo, idx) {
+  S.tplEdits[tipo].splice(idx, 1);
+  // renumber
+  S.tplEdits[tipo].forEach((s,i) => s.num = String(i+1).padStart(2,'0'));
+  loadTemplates();
+}
+
+async function saveTpl(tipo) {
+  const secoes = S.tplEdits[tipo];
+  const { data: ex } = await db.from('ar_templates')
+    .select('*').eq('tipo', tipo).eq('ativo', true).maybeSingle();
+  const novaV = ex ? (parseFloat(ex.versao)+0.1).toFixed(1) : '1.0';
+  if (ex) await db.from('ar_templates').update({ ativo:false }).eq('id', ex.id);
+  await db.from('ar_templates').insert({ tipo, versao:novaV, secoes, ativo:true });
+  toast(`Template "${tipo}" guardado v${novaV} ✓`, 'ok');
+  loadTemplates();
+}
+
+function renderObrasTpls(ovrs) {
+  const c = document.getElementById('tplObras');
+  if (!ovrs.length) {
+    c.innerHTML = `<div class="card"><div class="cb"><p class="mt" style="font-size:12px">Nenhum override definido. Todas as obras usam o modelo padrão.</p></div></div>`;
+    return;
+  }
+  c.innerHTML = `<div class="card"><div class="cb" style="padding:0">
+    ${ovrs.map(o=>`<div class="orow">
+      <span style="flex:1">${esc(o.obra_nome)}</span>
+      <span class="b b-neutral" style="font-size:10px">${esc(o.tipo)}</span>
+      <span class="b b-warn" style="font-size:10px">override v${o.tpl?.versao||'?'}</span>
+      <button class="btn btn-del" onclick="rmOvraTpl('${o.id}')">Remover</button>
+    </div>`).join('')}
+  </div></div>`;
+}
+
+async function rmOvraTpl(id) {
+  await db.from('ar_obras_templates').delete().eq('id', id);
+  loadTemplates();
+}
+
+/* ══════════════════════════════════════════════════════
+   UTILS
+══════════════════════════════════════════════════════ */
+function fmtDate(iso) {
+  if (!iso) return '—';
+  try { return new Date(iso + (iso.includes('T') ? '' : 'T12:00:00')).toLocaleDateString('pt-PT'); }
+  catch { return iso; }
+}
+
+function esc(s) {
+  if (s == null) return '';
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+/* ══════════════════════════════════════════════════════
+   INIT
+══════════════════════════════════════════════════════ */
+loadARs();
+</script>
+</body>
+</html>
