@@ -882,7 +882,7 @@ async function exportDocx(){
     kids.push(pp([],{before:80,after:0}));
 
     // Descrição header
-    kids.push(new Table({width:{size:CW,type:WidthType.DXA},columnWidths:[CW],rows:[new TableRow({children:[new TableCell({width:{size:CW,type:WidthType.DXA},borders:BORDS,shading:{fill:'E0E0E0',type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:120,right:120},children:[pp([r('Descrição das Situações Operacionais',{bold:true,sz:22})],{align:AlignmentType.CENTER,after:0})]})]})]});
+    kids.push(new Table({width:{size:CW,type:WidthType.DXA},columnWidths:[CW],rows:[new TableRow({children:[new TableCell({width:{size:CW,type:WidthType.DXA},borders:BORDS,shading:{fill:'E0E0E0',type:ShadingType.CLEAR},margins:{top:60,bottom:60,left:120,right:120},children:[pp([r('Descrição das Situações Operacionais',{bold:true,sz:22})],{align:AlignmentType.CENTER,after:0})]})]})]})  );
     kids.push(pp([],{before:80,after:0}));
 
     // Secções
@@ -914,7 +914,7 @@ async function exportDocx(){
         }
       });
 
-      kids.push(new Table({width:{size:CW,type:WidthType.DXA},columnWidths:[CW],rows:[new TableRow({children:[new TableCell({width:{size:CW,type:WidthType.DXA},borders:{top:{style:BorderStyle.NONE},bottom:brd,left:brd,right:brd},margins:{top:60,bottom:60,left:100,right:100},children:bp})]})]});
+      kids.push(new Table({width:{size:CW,type:WidthType.DXA},columnWidths:[CW],rows:[new TableRow({children:[new TableCell({width:{size:CW,type:WidthType.DXA},borders:{top:{style:BorderStyle.NONE},bottom:brd,left:brd,right:brd},margins:{top:60,bottom:60,left:100,right:100},children:bp})]})]}));
       kids.push(pp([],{before:80,after:0}));
     }
 
